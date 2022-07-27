@@ -18,6 +18,8 @@ margin_left = -344.0
 margin_top = -121.0
 margin_right = 344.0
 margin_bottom = 121.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="MarginContainer" type="MarginContainer" parent="LoginScreen"]
 margin_left = 7.0
@@ -48,6 +50,7 @@ margin_right = 634.0
 margin_bottom = 48.0
 custom_colors/font_color = Color( 0.819608, 0.290196, 0.290196, 1 )
 align = 1
+autowrap = true
 
 [node name="GridContainer" type="GridContainer" parent="LoginScreen/MarginContainer/VBoxContainer"]
 margin_top = 68.0
@@ -127,6 +130,8 @@ margin_left = -344.0
 margin_top = -127.5
 margin_right = 344.0
 margin_bottom = 127.5
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="MarginContainer" type="MarginContainer" parent="JoinScreen"]
 margin_left = 7.0
@@ -157,6 +162,7 @@ margin_right = 634.0
 margin_bottom = 48.0
 custom_colors/font_color = Color( 0.819608, 0.290196, 0.290196, 1 )
 align = 1
+autowrap = true
 
 [node name="CreateMatchContainer" type="HBoxContainer" parent="JoinScreen/MarginContainer/VBoxContainer"]
 margin_top = 68.0

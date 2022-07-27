@@ -140,14 +140,18 @@ func reset_ui():
 	username_field.text = ''
 	password_field.text = ''
 	create_account_checkbox.pressed = false
+	login_error_label.text = ''
 
 	join_match_field.text = ''
 	join_named_match_field.text = ''
+	join_error_label.text = ''
 	get_tree().set_group("join_button", "disabled", false)
 
 	login_screen.visible = false
 	join_screen.visible = true
 	players_screen.visible = false
+
+	refresh_lobby()
 
 func refresh_lobby():
 	var players = gamestate.get_player_list()

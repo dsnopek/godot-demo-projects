@@ -3,6 +3,8 @@ extends Node
 # Max number of players.
 const MAX_PEERS = 12
 
+var peer = null
+
 # Name for my player.
 var player_name = "The Warrior"
 
@@ -48,7 +50,6 @@ func _server_disconnected():
 
 # Callback from SceneTree, only for clients (not server).
 func _connected_fail():
-	get_tree().set_network_peer(null) # Remove peer
 	emit_signal("connection_failed")
 
 
@@ -150,8 +151,8 @@ func end_game():
 		# End it
 		get_node("/root/World").queue_free()
 
-	emit_signal("game_ended")
 	players.clear()
+	emit_signal("game_ended")
 
 
 func _ready():
