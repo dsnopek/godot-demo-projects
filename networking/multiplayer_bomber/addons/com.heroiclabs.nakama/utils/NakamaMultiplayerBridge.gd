@@ -179,7 +179,7 @@ func _generate_id(session_id: String) -> int:
 	var peer_id: int = session_id.hash() & 0x7FFFFFFF
 
 	# If this peer id is already taken, try to find another.
-	while _id_map.has(peer_id):
+	while peer_id <= 1 or _id_map.has(peer_id):
 		peer_id += 1
 		if peer_id > 0x7FFFFFFF or peer_id <= 0:
 			peer_id = randi() & 0x7FFFFFFF
@@ -193,19 +193,11 @@ func _map_id_to_session(peer_id: int, session_id: String) -> void:
 func _host_add_peer(presence: NakamaRTAPI.UserPresence) -> void:
 	var peer_id = _generate_id(presence.session_id)
 	_map_id_to_session(peer_id, presence.session_id)
-	multiplayer_peer.emit_signal("peer_connected", peer_id)
 
 	# Tell them we are the host.
 	nakama_socket.send_match_state_async(match_id, meta_op_code, JSON.print({
 		type = MetaMessageType.CLAIM_HOST,
 	}), [presence])
-
-	# Assign them a peer_id (tell everyone about it).
-	nakama_socket.send_match_state_async(match_id, meta_op_code, JSON.print({
-		type = MetaMessageType.ASSIGN_PEER_ID,
-		session_id = presence.session_id,
-		peer_id = peer_id,
-	}))
 
 	# Tell them about all the other connected peers.
 	for other_peer_id in _id_map:
@@ -217,6 +209,15 @@ func _host_add_peer(presence: NakamaRTAPI.UserPresence) -> void:
 			session_id = other_session_id,
 			peer_id = other_peer_id,
 		}), [presence])
+
+	# Assign them a peer_id (and tell everyone about it).
+	nakama_socket.send_match_state_async(match_id, meta_op_code, JSON.print({
+		type = MetaMessageType.ASSIGN_PEER_ID,
+		session_id = presence.session_id,
+		peer_id = peer_id,
+	}))
+
+	multiplayer_peer.emit_signal("peer_connected", peer_id)
 
 func _on_nakama_socket_received_match_presence(event: NakamaRTAPI.MatchPresenceEvent) -> void:
 	if event.match_id != match_id:
@@ -300,9 +301,11 @@ func _on_nakama_socket_received_match_state(data: NakamaRTAPI.MatchData) -> void
 		else:
 			nakama_socket.logger.error("Received meta message with unknown type: %s" % type)
 	elif data.op_code == rpc_op_code:
-		if not _users.has(data.presence.session_id):
+		var from_session_id: String = data.presence.session_id
+		if not _users.has(from_session_id) or _users[from_session_id].peer_id == 0:
+			push_error("Received RPC from %s which isn't assigned a peer id" % data.presence.session_id)
 			return
-		var from_peer_id = _users[data.presence.session_id].peer_id
+		var from_peer_id = _users[from_session_id].peer_id
 		multiplayer_peer.deliver_packet(data.binary_data, from_peer_id)
 
 func _on_multiplayer_peer_packet_generated(peer_id: int, buffer: PoolByteArray, _transfer_mode: int) -> void:

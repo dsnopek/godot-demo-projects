@@ -126,11 +126,13 @@ func _on_connection_failed():
 
 func _on_game_ended():
 	reset_ui()
+	nakama_multiplayer_bridge.leave()
 
 func _on_game_error(errtxt):
 	error_dialog.dialog_text = errtxt
 	error_dialog.popup_centered_minsize()
 	reset_ui()
+	nakama_multiplayer_bridge.leave()
 
 func reset_ui():
 	show()
