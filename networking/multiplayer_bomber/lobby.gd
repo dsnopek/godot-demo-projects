@@ -72,7 +72,7 @@ func _on_LoginButton_pressed() -> void:
 		return
 
 	nakama_multiplayer_bridge = NakamaMultiplayerBridge.new(nakama_socket)
-	nakama_multiplayer_bridge.connect("match_error", self, "_on_nakama_multiplayer_bridge_match_error")
+	nakama_multiplayer_bridge.connect("match_join_error", self, "_on_nakama_multiplayer_bridge_match_join_error")
 	get_tree().set_network_peer(nakama_multiplayer_bridge.multiplayer_peer)
 
 	login_screen.visible = false
@@ -109,11 +109,17 @@ func _on_JoinNamedMatchButton_pressed() -> void:
 func _on_FindMatchButton_pressed() -> void:
 	get_tree().set_group("join_button", "disabled", true)
 	join_error_label.text = "Looking for other players..."
-	nakama_multiplayer_bridge.start_matchmaking()
 
-func _on_nakama_multiplayer_bridge_match_error(msg: String) -> void:
+	var ticket: NakamaRTAPI.MatchmakerTicket = yield(nakama_socket.add_matchmaker_async(), "completed")
+	if ticket.is_exception():
+		_on_nakama_multiplayer_bridge_match_join_error(ticket.get_exception())
+		return
+
+	nakama_multiplayer_bridge.start_matchmaking(ticket)
+
+func _on_nakama_multiplayer_bridge_match_join_error(exception: NakamaException) -> void:
 	get_tree().set_group("join_button", "disabled", false)
-	join_error_label.text = "ERROR: " + msg
+	join_error_label.text = "ERROR: " + exception.message
 
 func _on_connection_success():
 	join_screen.visible = false
@@ -121,7 +127,7 @@ func _on_connection_success():
 	match_id_field.text = nakama_multiplayer_bridge.match_id
 
 func _on_connection_failed():
-	# This is handled by _on_nakama_multiplayer_bridge_match_error().
+	# This is handled by _on_nakama_multiplayer_bridge_match_join_error().
 	pass
 
 func _on_game_ended():

@@ -1,6 +1,8 @@
 extends Reference
 class_name NakamaMultiplayerBridge
 
+const NETWORKED_MULTIPLAYER_CUSTOM_CLASS = 'NetworkedMultiplayerCustom'
+
 enum MatchState {
 	DISCONNECTED,
 	JOINING,
@@ -16,7 +18,7 @@ enum MetaMessageType {
 var nakama_socket: NakamaSocket setget _set_readonly
 var match_state: int = MatchState.DISCONNECTED setget _set_readonly
 var match_id := '' setget _set_readonly
-var multiplayer_peer: NetworkedMultiplayerCustom = NetworkedMultiplayerCustom.new() setget _set_readonly
+var multiplayer_peer: NetworkedMultiplayerPeer setget _set_readonly
 
 # Configuration that can be set by the developer.
 var meta_op_code: int = 9001
@@ -36,22 +38,30 @@ class User extends Reference:
 	func _init(p_presence: NakamaRTAPI.UserPresence) -> void:
 		presence = p_presence
 
-signal match_error (message)
+signal match_join_error (exception)
 signal match_joined ()
 
 func _set_readonly(_value) -> void:
 	pass
 
 func _init(_nakama_socket: NakamaSocket) -> void:
+	if not ClassDB.class_exists(NETWORKED_MULTIPLAYER_CUSTOM_CLASS):
+		push_error("NakamaMultiplayerBridge only works with Godot 3.5 or newer!")
+		return
+
 	nakama_socket = _nakama_socket
 	nakama_socket.connect("received_match_presence", self, "_on_nakama_socket_received_match_presence")
 	nakama_socket.connect("received_matchmaker_matched", self, "_on_nakama_socket_received_matchmaker_matched")
 	nakama_socket.connect("received_match_state", self, "_on_nakama_socket_received_match_state")
 
+	multiplayer_peer = ClassDB.instance(NETWORKED_MULTIPLAYER_CUSTOM_CLASS)
 	multiplayer_peer.connect("packet_generated", self, "_on_multiplayer_peer_packet_generated")
 	multiplayer_peer.set_connection_status(NetworkedMultiplayerPeer.CONNECTION_CONNECTING)
 
 func create_match() -> void:
+	if multiplayer_peer == null:
+		push_error("Cannot create_match() - no multiplayer peer")
+		return
 	if match_state != MatchState.DISCONNECTED:
 		push_error("Cannot create match when state is %s" % MatchState.keys()[match_state])
 		return
@@ -61,7 +71,7 @@ func create_match() -> void:
 
 	var res: NakamaRTAPI.Match = yield(nakama_socket.create_match_async(), "completed")
 	if res.is_exception():
-		emit_signal("match_error", "Unable to create match")
+		emit_signal("match_join_error", res.get_exception())
 		leave()
 		return
 
@@ -69,6 +79,9 @@ func create_match() -> void:
 	_setup_host()
 
 func join_match(_match_id: String) -> void:
+	if multiplayer_peer == null:
+		push_error("Cannot join_match() - no multiplayer peer")
+		return
 	if match_state != MatchState.DISCONNECTED:
 		push_error("Cannot join match when state is %s" % MatchState.keys()[match_state])
 		return
@@ -78,13 +91,16 @@ func join_match(_match_id: String) -> void:
 
 	var res: NakamaRTAPI.Match = yield(nakama_socket.join_match_async(_match_id), "completed")
 	if res.is_exception():
-		emit_signal("match_error", "Unable to join match")
+		emit_signal("match_join_error", res.get_exception())
 		leave()
 		return
 
 	_setup_match(res)
 
 func join_named_match(_match_name: String) -> void:
+	if multiplayer_peer == null:
+		push_error("Cannot join_named_match() - no multiplayer peer")
+		return
 	if match_state != MatchState.DISCONNECTED:
 		push_error("Cannot join match when state is %s" % MatchState.keys()[match_state])
 		return
@@ -94,7 +110,7 @@ func join_named_match(_match_name: String) -> void:
 
 	var res: NakamaRTAPI.Match = yield(nakama_socket.create_match_async(_match_name), "completed")
 	if res.is_exception():
-		emit_signal("match_error", "Unable to join match")
+		emit_signal("match_join_error", res.get_exception())
 		leave()
 		return
 
@@ -102,21 +118,21 @@ func join_named_match(_match_name: String) -> void:
 	if res.size == 0 or (res.size == 1 and res.presences.size() == 0):
 		_setup_host()
 
-func start_matchmaking(p_query : String = "*", p_min_count : int = 2, p_max_count : int = 8, p_string_props : Dictionary = {}, p_numeric_props : Dictionary = {}, p_count_multiple : int = 0) -> void:
+func start_matchmaking(ticket: NakamaRTAPI.MatchmakerTicket) -> void:
+	if multiplayer_peer == null:
+		push_error("Cannot start_matchmaking() - no multiplayer peer")
+		return
 	if match_state != MatchState.DISCONNECTED:
 		push_error("Cannot start matchmaking when state is %s" % MatchState.keys()[match_state])
+		return
+	if ticket.is_exception():
+		push_error("Ticket with exception passed into start_matchmaking()")
 		return
 
 	match_state = MatchState.JOINING
 	multiplayer_peer.set_connection_status(NetworkedMultiplayerPeer.CONNECTION_CONNECTING)
 
-	var res: NakamaRTAPI.MatchmakerTicket = yield(nakama_socket.add_matchmaker_async(p_query, p_min_count, p_max_count, p_string_props, p_numeric_props, p_count_multiple), "completed")
-	if res.is_exception():
-		emit_signal("match_error", "Unable to start matchmaking")
-		leave()
-		return
-
-	_matchmaker_ticket = res.ticket
+	_matchmaker_ticket = ticket.ticket
 
 func _on_nakama_socket_received_matchmaker_matched(matchmaker_matched: NakamaRTAPI.MatchmakerMatched) -> void:
 	if _matchmaker_ticket != matchmaker_matched.ticket:
@@ -130,7 +146,7 @@ func _on_nakama_socket_received_matchmaker_matched(matchmaker_matched: NakamaRTA
 
 	var res: NakamaRTAPI.Match = yield(nakama_socket.join_matched_async(matchmaker_matched), "completed")
 	if res.is_exception():
-		emit_signal("match_error", "Unable to join match")
+		emit_signal("match_join_error", res.get_exception())
 		leave()
 		return
 
@@ -146,6 +162,9 @@ func _on_nakama_socket_received_matchmaker_matched(matchmaker_matched: NakamaRTA
 				_host_add_peer(presence)
 
 func leave() -> void:
+	if multiplayer_peer == null:
+		push_error("Cannot leave() - no multiplayer peer")
+		return
 	if match_state == MatchState.DISCONNECTED:
 		return
 	match_state = MatchState.DISCONNECTED
