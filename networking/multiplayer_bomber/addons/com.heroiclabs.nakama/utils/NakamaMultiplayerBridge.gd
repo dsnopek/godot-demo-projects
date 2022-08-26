@@ -7,6 +7,7 @@ enum MatchState {
 	DISCONNECTED,
 	JOINING,
 	CONNECTED,
+	SOCKET_CLOSED,
 }
 
 enum MetaMessageType {
@@ -53,6 +54,7 @@ func _init(_nakama_socket: NakamaSocket) -> void:
 	nakama_socket.connect("received_match_presence", self, "_on_nakama_socket_received_match_presence")
 	nakama_socket.connect("received_matchmaker_matched", self, "_on_nakama_socket_received_matchmaker_matched")
 	nakama_socket.connect("received_match_state", self, "_on_nakama_socket_received_match_state")
+	nakama_socket.connect("closed", self, "_on_nakama_socket_closed")
 
 	multiplayer_peer = ClassDB.instance(NETWORKED_MULTIPLAYER_CUSTOM_CLASS)
 	multiplayer_peer.connect("packet_generated", self, "_on_multiplayer_peer_packet_generated")
@@ -161,6 +163,19 @@ func _on_nakama_socket_received_matchmaker_matched(matchmaker_matched: NakamaRTA
 			if presence.session_id != _my_session_id:
 				_host_add_peer(presence)
 
+func _on_nakama_socket_closed() -> void:
+	match_state = MatchState.SOCKET_CLOSED
+	_cleanup()
+
+func get_user_presence_for_peer(peer_id: int) -> NakamaRTAPI.UserPresence:
+	var session_id = _id_map.get(peer_id)
+	if session_id == null:
+		return null
+	var user = _users.get(session_id)
+	if user == null:
+		return null
+	return user.presence
+
 func leave() -> void:
 	if multiplayer_peer == null:
 		push_error("Cannot leave() - no multiplayer peer")
@@ -171,11 +186,17 @@ func leave() -> void:
 
 	if match_id:
 		yield(nakama_socket.leave_match_async(match_id), "completed")
-		match_id = ''
 	if _matchmaker_ticket:
 		yield(nakama_socket.remove_matchmaker_async(_matchmaker_ticket), "completed")
-		_matchmaker_ticket = ''
 
+	_cleanup()
+
+func _cleanup() -> void:
+	for peer_id in _id_map:
+		multiplayer_peer.emit_signal("peer_disconnected", peer_id)
+
+	match_id = ''
+	_matchmaker_ticket = ''
 	_my_session_id = ''
 	_my_peer_id = 0
 	_id_map.clear()
@@ -267,10 +288,10 @@ func _on_nakama_socket_received_match_presence(event: NakamaRTAPI.MatchPresenceE
 
 		var peer_id = _users[presence.session_id].peer_id
 
+		multiplayer_peer.emit_signal("peer_disconnected", peer_id)
+
 		_users.erase(presence.session_id)
 		_id_map.erase(peer_id)
-
-		multiplayer_peer.emit_signal("peer_disconnected", peer_id)
 
 func _parse_json(data: String):
 	var result = JSON.parse(data)
